@@ -3,6 +3,7 @@
     <application
         android:theme="@style/AppTheme"
         android:label="BABYFACE サイネージ"
+        android:icon="@drawable/babyface_signage_icon"
         android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true"
         android:allowBackup="false"

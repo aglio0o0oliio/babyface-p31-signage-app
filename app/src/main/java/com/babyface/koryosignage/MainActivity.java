@@ -12,7 +12,7 @@ import android.view.Window;
 import android.view.WindowManager;
 
 public class MainActivity extends Activity {
-    private static final String SIGNAGE_URL = "https://aglio0o0li0.github.io/babyface-koryo-signage/";
+    private static final String SIGNAGE_URL = "https://aglio0o0oliio.github.io/babyface-koryo-signage/";
     private WebView webView;
 
     @Override

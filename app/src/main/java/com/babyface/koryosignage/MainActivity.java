@@ -46,7 +46,7 @@ public class MainActivity extends Activity {
 
     private void loadFresh() {
         // Cache-busting query keeps the app from showing an old index.html.
-        webView.loadUrl(SIGNAGE_URL + "?v=" + System.currentTimeMillis());
+        webView.loadUrl(SIGNAGE_URL);
     }
 
     private void enterImmersive() {

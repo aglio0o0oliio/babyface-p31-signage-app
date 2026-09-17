@@ -3,12 +3,15 @@ package com.babyface.koryosignage;
 import android.app.Activity;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.view.View;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceError;
 import android.graphics.Color;
 import android.view.Window;
 import android.view.WindowManager;
@@ -20,6 +23,7 @@ import android.content.Context;
 
 public class MainActivity extends Activity {
 
+    private static final String TAG = "BABYFACE";
     private static final String SIGNAGE_URL =
             "https://aglio0o0oliio.github.io/babyface-koryo-signage/";
 
@@ -39,6 +43,8 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        Log.d(TAG, "onCreate START");
+
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
         getWindow().setFlags(
@@ -54,10 +60,23 @@ public class MainActivity extends Activity {
 
         // WebView作成
         webView = new WebView(this);
-
         webView.setBackgroundColor(Color.WHITE);
 
+        Log.d(TAG, "WebView created");
+
         webView.setWebViewClient(new WebViewClient() {
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Log.d(TAG, "shouldOverrideUrlLoading: " + request.getUrl());
+                return false;
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                Log.d(TAG, "onPageStarted: " + url);
+            }
 
             // Android 6.0以降
             @Override
@@ -67,6 +86,12 @@ public class MainActivity extends Activity {
                     WebResourceError error) {
 
                 super.onReceivedError(view, request, error);
+
+                Log.e(TAG,
+                        "onReceivedError: mainFrame=" + request.isForMainFrame()
+                                + " code=" + error.getErrorCode()
+                                + " description=" + error.getDescription()
+                                + " url=" + request.getUrl());
 
                 // メインページのエラーだけ処理する
                 if (request.isForMainFrame()) {
@@ -92,9 +117,29 @@ public class MainActivity extends Activity {
                         failingUrl
                 );
 
+                Log.e(TAG,
+                        "onReceivedError(legacy): code=" + errorCode
+                                + " description=" + description
+                                + " url=" + failingUrl);
+
                 pageLoaded = false;
 
                 scheduleRetry();
+            }
+
+            @Override
+            public void onReceivedHttpError(
+                    WebView view,
+                    WebResourceRequest request,
+                    android.webkit.WebResourceResponse errorResponse) {
+
+                super.onReceivedHttpError(view, request, errorResponse);
+
+                Log.e(TAG,
+                        "onReceivedHttpError: mainFrame=" + request.isForMainFrame()
+                                + " status=" + errorResponse.getStatusCode()
+                                + " reason=" + errorResponse.getReasonPhrase()
+                                + " url=" + request.getUrl());
             }
 
             @Override
@@ -107,10 +152,29 @@ public class MainActivity extends Activity {
                 pageLoaded = true;
                 retryScheduled = false;
 
+                Log.d(TAG, "onPageFinished: " + url);
+
+                // ページタイトル確認
+                Log.d(TAG, "title=" + view.getTitle());
+
                 // 動画再生を試行
                 retryVideo(1000);
                 retryVideo(3000);
                 retryVideo(6000);
+            }
+        });
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                Log.d(TAG,
+                        "JS console: "
+                                + consoleMessage.message()
+                                + " @"
+                                + consoleMessage.sourceId()
+                                + ":"
+                                + consoleMessage.lineNumber());
+                return super.onConsoleMessage(consoleMessage);
             }
         });
 
@@ -135,6 +199,8 @@ public class MainActivity extends Activity {
 
         setContentView(webView);
 
+        Log.d(TAG, "setContentView completed");
+
         // ネットワーク監視開始
         setupNetworkMonitoring();
 
@@ -142,9 +208,12 @@ public class MainActivity extends Activity {
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
+                Log.d(TAG, "5-second startup loadSignage()");
                 loadSignage();
             }
         }, 5000);
+
+        Log.d(TAG, "onCreate END");
     }
 
     /**
@@ -152,17 +221,25 @@ public class MainActivity extends Activity {
      */
     private void loadSignage() {
 
+        Log.d(TAG, "loadSignage() START");
+
         if (webView == null) {
+            Log.e(TAG, "loadSignage(): webView == null");
             return;
         }
 
-        if (!isNetworkAvailable()) {
+        boolean networkAvailable = isNetworkAvailable();
+        Log.d(TAG, "loadSignage(): isNetworkAvailable=" + networkAvailable);
+
+        if (!networkAvailable) {
+            Log.w(TAG, "loadSignage(): network unavailable -> scheduleRetry()");
             scheduleRetry();
             return;
         }
 
         retryScheduled = false;
 
+        Log.d(TAG, "loadSignage(): loadUrl=" + SIGNAGE_URL);
         webView.loadUrl(SIGNAGE_URL);
     }
 
@@ -172,10 +249,13 @@ public class MainActivity extends Activity {
     private void scheduleRetry() {
 
         if (retryScheduled) {
+            Log.d(TAG, "scheduleRetry(): already scheduled");
             return;
         }
 
         retryScheduled = true;
+
+        Log.w(TAG, "scheduleRetry(): retry in " + NETWORK_CHECK_INTERVAL + "ms");
 
         handler.postDelayed(new Runnable() {
             @Override
@@ -184,15 +264,17 @@ public class MainActivity extends Activity {
                 retryScheduled = false;
 
                 if (webView == null) {
+                    Log.e(TAG, "scheduleRetry(): webView == null");
                     return;
                 }
 
                 if (isNetworkAvailable()) {
+                    Log.d(TAG, "scheduleRetry(): network available -> loadSignage()");
                     loadSignage();
                 } else {
+                    Log.w(TAG, "scheduleRetry(): network still unavailable");
                     scheduleRetry();
                 }
-
             }
         }, NETWORK_CHECK_INTERVAL);
     }
@@ -207,8 +289,11 @@ public class MainActivity extends Activity {
                         getSystemService(Context.CONNECTIVITY_SERVICE);
 
         if (connectivityManager == null) {
+            Log.e(TAG, "setupNetworkMonitoring(): ConnectivityManager == null");
             return;
         }
+
+        Log.d(TAG, "setupNetworkMonitoring(): registering NetworkCallback");
 
         networkCallback =
                 new ConnectivityManager.NetworkCallback() {
@@ -217,15 +302,19 @@ public class MainActivity extends Activity {
                     public void onAvailable(Network network) {
                         super.onAvailable(network);
 
+                        Log.d(TAG, "NetworkCallback.onAvailable: " + network);
+
                         // ネットワーク復旧時に自動再読み込み
                         handler.postDelayed(new Runnable() {
                             @Override
                             public void run() {
 
                                 if (webView == null) {
+                                    Log.e(TAG, "onAvailable delayed: webView == null");
                                     return;
                                 }
 
+                                Log.d(TAG, "onAvailable delayed -> loadSignage()");
                                 loadSignage();
                             }
                         }, 2000);
@@ -234,6 +323,8 @@ public class MainActivity extends Activity {
                     @Override
                     public void onLost(Network network) {
                         super.onLost(network);
+
+                        Log.w(TAG, "NetworkCallback.onLost: " + network);
 
                         // ネットワークが切れても
                         // すぐに画面を消さない
@@ -245,7 +336,15 @@ public class MainActivity extends Activity {
             connectivityManager.registerDefaultNetworkCallback(
                     networkCallback
             );
+            Log.d(TAG, "NetworkCallback registered");
         } catch (Exception e) {
+            Log.e(TAG,
+                    "NetworkCallback registration failed: "
+                            + e.getClass().getName()
+                            + ":"
+                            + e.getMessage(),
+                    e);
+
             // 端末側でNetworkCallbackが使えない場合
             // リトライ方式だけで動作
         }
@@ -263,6 +362,7 @@ public class MainActivity extends Activity {
         }
 
         if (connectivityManager == null) {
+            Log.e(TAG, "isNetworkAvailable(): ConnectivityManager == null");
             return false;
         }
 
@@ -272,6 +372,7 @@ public class MainActivity extends Activity {
                     connectivityManager.getActiveNetwork();
 
             if (network == null) {
+                Log.w(TAG, "isNetworkAvailable(): activeNetwork == null");
                 return false;
             }
 
@@ -279,14 +380,37 @@ public class MainActivity extends Activity {
                     connectivityManager.getNetworkCapabilities(network);
 
             if (capabilities == null) {
+                Log.w(TAG, "isNetworkAvailable(): capabilities == null");
                 return false;
             }
 
-            return capabilities.hasCapability(
+            boolean internet = capabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_INTERNET
             );
 
+            boolean validated = capabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_VALIDATED
+            );
+
+            boolean wifi = capabilities.hasTransport(
+                    NetworkCapabilities.TRANSPORT_WIFI
+            );
+
+            Log.d(TAG,
+                    "isNetworkAvailable(): internet=" + internet
+                            + " validated=" + validated
+                            + " wifi=" + wifi);
+
+            return internet;
+
         } catch (Exception e) {
+
+            Log.e(TAG,
+                    "isNetworkAvailable() exception: "
+                            + e.getClass().getName()
+                            + ":"
+                            + e.getMessage(),
+                    e);
 
             return false;
         }
@@ -302,8 +426,11 @@ public class MainActivity extends Activity {
             public void run() {
 
                 if (webView == null) {
+                    Log.e(TAG, "retryVideo(): webView == null");
                     return;
                 }
+
+                Log.d(TAG, "retryVideo(): delay=" + delay);
 
                 webView.evaluateJavascript(
                         "(function(){"
@@ -342,6 +469,8 @@ public class MainActivity extends Activity {
 
         super.onWindowFocusChanged(hasFocus);
 
+        Log.d(TAG, "onWindowFocusChanged: hasFocus=" + hasFocus);
+
         if (hasFocus) {
             enterImmersive();
         }
@@ -352,6 +481,8 @@ public class MainActivity extends Activity {
 
         super.onResume();
 
+        Log.d(TAG, "onResume");
+
         enterImmersive();
 
         // アプリ復帰時にもネットワークを確認
@@ -360,8 +491,11 @@ public class MainActivity extends Activity {
             public void run() {
 
                 if (webView == null) {
+                    Log.e(TAG, "onResume delayed: webView == null");
                     return;
                 }
+
+                Log.d(TAG, "onResume delayed: pageLoaded=" + pageLoaded);
 
                 if (!pageLoaded) {
                     loadSignage();
@@ -374,10 +508,13 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
 
         // 専用サイネージ端末なので戻る操作を無効化
+        Log.d(TAG, "onBackPressed ignored");
     }
 
     @Override
     protected void onDestroy() {
+
+        Log.d(TAG, "onDestroy");
 
         handler.removeCallbacksAndMessages(null);
 
@@ -389,7 +526,11 @@ public class MainActivity extends Activity {
                 connectivityManager.unregisterNetworkCallback(
                         networkCallback
                 );
+                Log.d(TAG, "NetworkCallback unregistered");
             } catch (Exception e) {
+                Log.w(TAG,
+                        "unregisterNetworkCallback exception: "
+                                + e.getMessage());
                 // 既に解除済みの場合は無視
             }
         }
@@ -399,6 +540,8 @@ public class MainActivity extends Activity {
             webView.stopLoading();
             webView.loadUrl("about:blank");
             webView.destroy();
+
+            Log.d(TAG, "WebView destroyed");
         }
 
         super.onDestroy();
